@@ -1,16 +1,18 @@
 package org.example;
 
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.io.*;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.rmi.MarshalledObject;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -19,8 +21,8 @@ import java.util.concurrent.TimeUnit;
 
 public class CrptApi<T>
 {
-    private final Semaphore requestSemaphore;
-    private final ScheduledExecutorService scheduler;
+    private Semaphore requestSemaphore;
+    private ScheduledExecutorService scheduler;
     private TimeUnit timeUnit;
     private int requestLimit;
 
@@ -33,18 +35,64 @@ public class CrptApi<T>
         scheduler.scheduleAtFixedRate(() -> requestSemaphore.release(), 1, 1, timeUnit);
     }
 
+    public CrptApi() {
+    }
 
-    public  ResponseEntity<T> post(String address, String json, Map<String, String> headers) throws InterruptedException, IOException {
+    public  ResponseEntity<T> post(String address, Map<String, Object> params, Map<String, String> headers) throws InterruptedException, IOException {
         requestSemaphore.acquire();
         RestTemplate<T> restTemplate = new RestTemplate<>();
-        return restTemplate.post(address, json, headers);
+        return restTemplate.post(address, params, headers);
 
+    }
+
+    @NoArgsConstructor
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    public static class Doc {
+        private Description description;
+        private String doc_id;
+        private String doc_status;
+        private String doc_type;
+        private boolean importRequest;
+        private String owner_inn;
+        private String participant_inn;
+        private String producer_inn;
+        private String production_date;
+        private String production_type;
+        private List<Product> products;
+        private String reg_date;
+        private String reg_number;
+    }
+
+    @NoArgsConstructor
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    public static class Product {
+        private String certificate_document;
+        private String certificate_document_date;
+        private String certificate_document_number;
+        private String owner_inn;
+        private String producer_inn;
+        private String production_date;
+        private String tnved_code;
+        private String uit_code;
+        private String uitu_code;
+    }
+
+    @Getter
+    @NoArgsConstructor
+    @Setter
+    public static class Description {
+        String participantInn;
     }
 
 
     private static class RestTemplate<T> {
-        ResponseEntity<T> post(String urlString, String json, Map<String, String> headers) throws IOException {
+        ResponseEntity<T> post(String urlString, Map<String, Object> params, Map<String, String> headers) throws IOException {
             URL url = new URL(urlString);
+            String json = new ObjectMapper().writeValueAsString(params);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
             connection.setDoOutput(true);
@@ -100,13 +148,21 @@ public class CrptApi<T>
 
 
     }
-    public static void main(String[] args ) throws IOException, InterruptedException {
+
+    public static void main(String[] args) throws IOException, InterruptedException {
+        CrptApi<String> crptApi = new CrptApi(TimeUnit.MILLISECONDS, 5);
         String url = "https://ismp.crpt.ru/api/v3/lk/documents/create";
-        String json = "{ \"participantInn\": \"string\" }, \"doc_id\": \"string\", \"doc_status\": \"string\", \"doc_type\": \"LP_INTRODUCE_GOODS\", 109 \"importRequest\": true, \"owner_inn\": \"string\", \"participant_inn\": \"string\", \"producer_inn\": \"string\", \"production_date\": \"2020-01-23\", \"production_type\": \"string\", \"products\": [ { \"certificate_document\": \"string\", \"certificate_document_date\": \"2020-01-23\", \"certificate_document_number\": \"string\", \"owner_inn\": \"string\", \"producer_inn\": \"string\", \"production_date\": \"2020-01-23\", \"tnved_code\": \"string\", \"uit_code\": \"string\", \"uitu_code\": \"string\" } ], \"reg_date\": \"2020-01-23\", \"reg_number\": \"string\"}";
+        String json = "{\"description\": { \"participantInn\": \"string\" }," +
+                " \"doc_id\": \"string\", \"doc_status\": \"string\", \"doc_type\": \"LP_INTRODUCE_GOODS\", \"importRequest\": true, \"owner_inn\": \"string\", \"participant_inn\": \"string\", \"producer_inn\": \"string\", \"production_date\": \"2020-01-23\", \"production_type\": \"string\", \"products\": [ { \"certificate_document\": \"string\", \"certificate_document_date\": \"2020-01-23\", \"certificate_document_number\": \"string\", \"owner_inn\": \"string\", \"producer_inn\": \"string\", \"production_date\": \"2020-01-23\", \"tnved_code\": \"string\", \"uit_code\": \"string\", \"uitu_code\": \"string\" } ], \"reg_date\": \"2020-01-23\", \"reg_number\": \"string\"}";
+        String signExample = "12345";
         System.out.println("start");
-        CrptApi<String> crptApi = new CrptApi<>(TimeUnit.MILLISECONDS, 5);
         Map<String, String> headers = new HashMap<>();
-        ResponseEntity<String> responseEntity = crptApi.post(url, json, headers);
+        ObjectMapper objectMapper = new ObjectMapper();
+        Doc doc = objectMapper.readValue(json, Doc.class);
+        Map<String, Object> params = new HashMap<>();
+        params.put("body", doc);
+        params.put("sign", signExample);
+        ResponseEntity<String> responseEntity =  crptApi.post(url, params, headers);
         System.out.println(String.format("Code %s, answer %s, error %s", responseEntity.getCode(),
                 responseEntity.getBody(), responseEntity.getError()));
         System.out.println("end");
