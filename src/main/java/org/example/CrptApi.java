@@ -6,11 +6,9 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import okhttp3.*;
 
-import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,10 +36,10 @@ public class CrptApi<T>
     public CrptApi() {
     }
 
-    public  ResponseEntity<T> post(String address, Map<String, Object> params, Map<String, String> headers) throws InterruptedException, IOException {
+    public  ResponseEntity<T> post(String address, MediaType mediaType, Map<String, Object> params, Map<String, String> headers) throws InterruptedException, IOException {
         requestSemaphore.acquire();
         RestTemplate<T> restTemplate = new RestTemplate<>();
-        return restTemplate.post(address, params, headers);
+        return restTemplate.post(address, mediaType, params, headers);
 
     }
 
@@ -90,38 +88,19 @@ public class CrptApi<T>
 
 
     private static class RestTemplate<T> {
-        ResponseEntity<T> post(String urlString, Map<String, Object> params, Map<String, String> headers) throws IOException {
-            URL url = new URL(urlString);
-            String json = new ObjectMapper().writeValueAsString(params);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setDoOutput(true);
+        ResponseEntity<T> post(String url, MediaType mediaType, Map<String, Object> params, Map<String, String> headers) throws IOException {
+            OkHttpClient client = new OkHttpClient();
+            ObjectMapper objectMapper = new ObjectMapper();
+            String json = objectMapper.writeValueAsString(params);
+            RequestBody requestBody = RequestBody.create(json, mediaType);
+            Request.Builder requestBuilder = new Request.Builder().url(url).post(requestBody);
             for (Map.Entry<String, String> entry : headers.entrySet()) {
-                connection.setRequestProperty(entry.getKey(), entry.getValue());
+                requestBuilder.addHeader(entry.getKey(), entry.getValue());
             }
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(json.getBytes(StandardCharsets.UTF_8));
-                int responseCode = connection.getResponseCode();
-                String error = "";
-                String message = "";
-                if (responseCode >= 200 && responseCode < 300) {
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        message += line;
-                    }
-                    reader.close();
-                } else {
-                    BufferedReader errorReader = new BufferedReader(new InputStreamReader(connection.getErrorStream()));
-                    String line;
-                    while ((line = errorReader.readLine()) != null) {
-                        error += line;
-                    }
-                    errorReader.close();
-                }
-                T tMess = new ConverterIml<T>().convert(message);
-                return new ResponseEntity<T>(responseCode, tMess, error);
-            }
+            Response response = client.newCall(requestBuilder.build()).execute();
+            T tMess = new ConverterIml<T>().convert(response.body().string());
+            return new ResponseEntity<>(response.code(), tMess);
+
         }
 
     }
@@ -144,9 +123,6 @@ public class CrptApi<T>
     private static class ResponseEntity<T> {
         private int code;
         private T body;
-        private String error;
-
-
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
@@ -162,9 +138,11 @@ public class CrptApi<T>
         Map<String, Object> params = new HashMap<>();
         params.put("body", doc);
         params.put("sign", signExample);
-        ResponseEntity<String> responseEntity =  crptApi.post(url, params, headers);
-        System.out.println(String.format("Code %s, answer %s, error %s", responseEntity.getCode(),
-                responseEntity.getBody(), responseEntity.getError()));
+        ResponseEntity<String> responseEntity =  crptApi.post(url,
+                MediaType.parse("application/json"),
+                params, headers);
+        System.out.println(String.format("Code %s, answer %s", responseEntity.getCode(),
+                responseEntity.getBody()));
         System.out.println("end");
     }
 }
